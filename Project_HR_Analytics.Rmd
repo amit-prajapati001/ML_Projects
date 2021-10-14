@@ -1,0 +1,899 @@
+---
+title: "HR Analytics Hackathon"
+output: html_notebook
+---
+
+
+
+```{r}
+
+# Clear everything previously in environment.
+rm(list = ls())
+
+
+
+
+```
+
+
+
+```{r}
+# Import datasets
+require(readr)
+train<- read_csv("D:/R-dataset/HR_Analytic_project/hr_analytics_train.csv")
+test<- read_csv("D:/R-dataset/HR_Analytic_project/hr_analytics_test.csv")
+
+
+# Get a feel of the data at hand
+head(train)
+
+```
+
+
+
+```{r}
+
+# Combine datasets for cleaning
+require(dplyr)
+master <- bind_rows(train, test)
+
+str(master)
+
+```
+
+
+
+```{r}
+#### ---- Data cleaning ---- ####
+
+# Avoid case mismatch possibility
+master <- mutate_if(master, is.character, tolower)
+
+```
+
+
+
+```{r}
+# Check duplicates
+
+master <- distinct(master)
+
+
+
+```
+
+
+
+```{r}
+# Check missing values
+colSums(is.na(master))
+
+```
+
+
+
+```{r}
+3443 / nrow(master) * 100
+
+5936 / nrow(master) * 100
+
+```
+
+
+
+```{r}
+# NA's in previous year rating
+summary(as.factor(master$previous_year_rating))
+
+# Check where previous_year_rating is NA
+df <- master[which(is.na(master$previous_year_rating)), ]
+
+View(df)
+```
+
+
+
+```{r}
+# We see that where previous_year_rating is NA, length_of_service is "1".
+# So NA's seem justified.
+require(ggplot2)
+
+ggplot(master[1:54808, ], aes(x = previous_year_rating, fill = as.factor(is_promoted))) + 
+  geom_bar(position = 'fill')
+
+```
+And it is significant!
+
+
+
+```{r}
+master$previous_year_rating[which(is.na(master$previous_year_rating))] <- 'freshers'
+
+ggplot(master[1:54808, ], aes(x = previous_year_rating, fill = as.factor(is_promoted))) + 
+  geom_bar(position = 'fill')
+
+```
+
+
+
+```{r}
+# Blanks in education
+summary(as.factor(master$education))
+
+ggplot(master[1:54808,], aes(x = education, fill = as.factor(is_promoted))) + geom_bar(position = 'fill')
+
+```
+
+
+
+```{r}
+edu_gp <- group_by(train, education) %>% summarise(prom_perc = round(sum(is_promoted) / n() * 100, 2))
+
+edu_gp
+
+```
+
+
+
+```{r}
+# Lets keep it simple for now.
+master$education[which(is.na(master$education))] <- "unknown"
+
+table(master$education)
+
+```
+
+
+
+```{r}
+# Univariate / Bivariate Analysis ----
+
+# 1 employee_id
+n_distinct(master$employee_id) == nrow(master)
+
+```
+
+
+
+```{r}
+# 2 department
+
+ggplot(master, aes(x = department)) + 
+  geom_bar(fill = 'skyblue',color = 'black') + coord_flip()
+
+dept_df <- group_by(master, department) %>% 
+  summarise(dept_influence = round(sum(is_promoted, na.rm = T)/n()*100, 2)) %>%
+  arrange(dept_influence)
+
+dept_df
+
+```
+
+Is there departmental bias ???
+
+
+
+
+
+```{r}
+
+# 3 region
+
+ggplot(master, aes(x = region)) + 
+  geom_bar(fill = 'skyblue',color = 'black') + coord_flip()
+
+reg_df <- group_by(master, region) %>% 
+          summarise(reg_strength = n()) %>%
+          arrange(reg_strength)
+
+# Way too many categories in region. Pattern detection not possible.
+
+```
+
+
+
+```{r}
+master$region <- NULL
+
+```
+
+
+
+```{r}
+
+# 5 gender
+ggplot(master[!is.na(master$is_promoted),],aes(x = gender, fill =  gender)) + geom_bar() + coord_polar()
+
+
+ggplot(master[!is.na(master$is_promoted),], 
+       aes(x = gender, fill =  as.factor(is_promoted))) + 
+  geom_bar(position = 'fill')
+# Lesser female employees overall. But no apparent gender bias in promotions.
+
+
+```
+
+
+
+```{r}
+# 6 recruitment_channel
+
+channel_df <- group_by(master, recruitment_channel) %>% 
+  summarise(channel_influence = round(sum(is_promoted, na.rm = T)/n()*100,2)) %>%
+  arrange(channel_influence)
+
+channel_df
+# Clearly, referred employees outdo others.
+
+
+```
+
+
+
+```{r}
+
+# 7 no_of_trainings
+
+# Check outliers
+plot(quantile(master$no_of_trainings, seq(0,1,0.01)))
+quantile(master$no_of_trainings, seq(0,1,0.01))
+
+master$no_of_trainings[master$no_of_trainings > 4] <- 4
+
+
+```
+
+
+
+```{r}
+ggplot(master[!is.na(master$is_promoted),], aes(x = no_of_trainings, fill = as.factor(is_promoted))) +
+  geom_bar(position = 'fill')
+
+# More the no of trainings required, lesser the chance of promotion.
+
+```
+
+
+
+
+```{r}
+
+# 8 Age
+
+# Check outliers
+plot(quantile(master$age, seq(0,1,0.01)))
+# No outliers
+
+ggplot(train, aes(x = age, fill = as.factor(is_promoted))) + 
+  geom_histogram(binwidth = 10, color = 'black', position = 'fill')
+
+```
+
+
+
+```{r}
+
+# 10 length_of_service
+
+# Check outliers
+plot(quantile(master$length_of_service, seq(0,1,0.01)))
+quantile(master$length_of_service, seq(0,1,0.01))
+
+master$length_of_service[master$length_of_service > 20] <- 20
+
+
+```
+
+
+
+```{r}
+ggplot(master[!is.na(master$is_promoted),], 
+       aes(x = length_of_service, 
+           fill = as.factor(is_promoted))) + 
+  geom_histogram(binwidth = 5, position = 'fill',color = 'black')
+
+
+```
+
+
+
+```{r}
+
+
+# 11 KPIs_met>80%
+
+ggplot(master[!is.na(master$is_promoted),], 
+       aes(x = `KPIs_met >80%`, fill = as.factor(is_promoted))) + 
+  geom_bar(position = 'fill',color = 'black')
+
+# Clearly, meeting KPI matters for promotion
+
+
+```
+
+
+
+```{r}
+
+# 12 awards_won?
+
+ggplot(master[!is.na(master$is_promoted),], 
+       aes(x = `awards_won?`, fill = as.factor(is_promoted))) + 
+  geom_bar(position = 'fill',color = 'black')
+
+# It highly impacts chances of promotion.
+
+
+
+```
+
+
+
+```{r}
+# 13 avg_training_score
+plot(quantile(master$avg_training_score, seq(0,1,0.01)))
+quantile(master$avg_training_score, seq(0,1,0.01))
+
+master$avg_training_score[master$avg_training_score > 91] <- 91
+master$avg_training_score[master$avg_training_score < 44] <- 44
+
+```
+
+
+```{r}
+
+
+ggplot(master[!is.na(master$is_promoted),], 
+       aes(x = avg_training_score, 
+           fill = as.factor(is_promoted))) + 
+  geom_histogram(binwidth = 10, position = 'fill',color = 'black')
+
+
+
+```
+
+
+
+Feature Engineering ----
+
+```{r}
+# Creating some new metrics which may help in prediction.
+
+# total training score of employees
+master$tot_training_score <- master$no_of_trainings * master$avg_training_score
+
+# Age of employee when joined company
+master$start_time_age <- master$age - master$length_of_service
+
+```
+
+
+
+```{r}
+
+# Lets normalize continuous variables.
+master[ , c(6,7,9,12,14,15)] <- sapply(master[ , c(6,7,9,12,14,15)], scale)
+
+glimpse(master) 
+
+# EDA Complete...
+
+```
+
+
+
+
+
+```{r}
+require(dummies)
+master <- dummy.data.frame(as.data.frame(master))
+
+
+train <- master[which(!is.na(master$is_promoted)),]
+
+test.data <- master[which(is.na(master$is_promoted)),]
+
+
+require(caTools)
+set.seed(999)
+index <- sample.split(train$is_promoted, SplitRatio = 0.75)
+
+trn.data <- train[index, ]
+val.data <- train[!index, ]
+
+```
+
+EDA Complete !
+
+
+
+Model Building ----
+
+```{r}
+
+rm(channel_df, dept_df, df, edu_gp, master, reg_df, test, train)
+
+View(trn.data)
+
+```
+
+
+
+1. Logistic Regression ----
+
+```{r}
+model_1 <- glm(is_promoted ~ ., data = trn.data[,-1], family = 'binomial')
+
+summary(model_1)
+
+
+```
+
+
+
+Step-wise reduction
+
+```{r}
+model_2 <- step(model_1)
+
+summary(model_2)
+
+```
+
+
+```{r}
+require(car)
+
+sort(vif(model_2))
+
+```
+
+
+
+removing dedpartmentoperations. High VIF and lesser impact on AIC.
+
+
+```{r}
+model_3 <- glm(formula = is_promoted ~ departmentanalytics + departmentfinance + 
+    departmenthr + departmentlegal + departmentprocurement + 
+    `departmentr&d` + `departmentsales & marketing` + `educationbachelor's` + 
+    `educationmaster's & above` + no_of_trainings + age + previous_year_rating1 + 
+    previous_year_rating2 + previous_year_rating4 + previous_year_rating5 + 
+    length_of_service + `KPIs_met >80%` + `awards_won?` + avg_training_score, 
+    family = "binomial", data = trn.data[, -1])
+
+
+summary(model_3)
+
+```
+
+
+
+```{r}
+sort(vif(model_3))
+```
+
+
+
+
+
+
+```{r}
+round(prop.table(table(trn.data$is_promoted)) * 100, 2)
+# Target class has huge imbalance.
+
+
+```
+
+Predicting.
+
+```{r}
+
+prob_prom <- predict(model_3, newdata = val.data, type = 'response')
+
+summary(prob_prom)
+
+pred_prom <- as.factor(ifelse(prob_prom > 0.085, 1, 0))
+
+act_prom <- as.factor(val.data$is_promoted)
+
+require(caret)
+confusionMatrix(pred_prom, act_prom, positive = '1')
+
+```
+
+
+
+```{r}
+prob_prom <- predict(model_3, newdata = test.data, type = 'response')
+
+test.data$is_promoted <- ifelse(prob_prom > 0.085, 1, 0)
+
+write.csv(test.data[, c('employee_id', 'is_promoted')], 'sub_log.csv', row.names = F)
+
+```
+
+
+
+
+
+
+
+
+
+
+2. Decision Tree ----
+
+
+
+
+```{r}
+trn.data$is_promoted <- as.factor(trn.data$is_promoted)
+val.data$is_promoted <- as.factor(val.data$is_promoted)
+
+require(rpart)
+dt_model <- rpart(is_promoted ~ ., data = trn.data[,-1])
+
+require(rpart.plot)
+prp(dt_model)
+
+```
+
+Underfitted tree due to class imbalance.
+
+
+
+```{r}
+
+table(trn.data$is_promoted[trn.data$avg_training_score < 2])
+
+table(trn.data$is_promoted[trn.data$avg_training_score >= 2])
+
+```
+
+
+
+Let's predict
+
+```{r}
+
+dt_pred <- predict(dt_model, newdata = val.data)
+summary(dt_pred)
+
+dt_prom <- as.factor(ifelse(dt_pred[,2] > 0.077, "1", "0"))
+
+confusionMatrix(dt_prom, act_prom, positive = '1')
+
+```
+
+Poor validation. Not worthy to go further.
+
+
+
+3. K-Nearest Neighbors ----
+
+```{r}
+require(class)
+
+knn_prom <- knn(train = select(trn.data, -c(employee_id, is_promoted)), 
+                cl = trn.data$is_promoted, 
+                test = select(val.data, -c(employee_id, is_promoted)), 
+                k = 5)
+
+confusionMatrix(knn_prom, act_prom, positive = '1')
+
+```
+
+K-NN not working due to class imbalance in target variable.
+
+
+
+
+```{r}
+names(trn.data)
+```
+
+4. Random Forest
+
+```{r}
+require(randomForest)
+
+names(trn.data)[c(8,9,11,12,13,29,30)] <- c("department_r_d", "department_sales_marketing",
+                                            "education_bachelors", "education_below_secondary",
+                                            "education_masters", "KPIs_met_80",
+                                            "awards_won")
+
+names(val.data)[c(8,9,11,12,13,29,30)] <- c("department_r_d", "department_sales_marketing",
+                                            "education_bachelors", "education_below_secondary",
+                                            "education_masters", "KPIs_met_80",
+                                            "awards_won")
+
+names(test.data)[c(8,9,11,12,13,29,30)] <- c("department_r_d", "department_sales_marketing",
+                                             "education_bachelors", "education_below_secondary",
+                                             "education_masters", "KPIs_met_80",
+                                             "awards_won")
+
+rm(dt_model, dt_pred, model_1, model_2, dt_prom, index, knn_prom, pred_prom, prob_prom)
+
+```
+
+
+
+
+```{r}
+
+set.seed(99)
+rf_model <- randomForest(is_promoted ~ ., trn.data[,-1], ntree = 1000,
+                         do.trace = 50, importance = T)
+
+```
+
+
+
+
+```{r}
+
+varImp(rf_model)
+
+varImpPlot(rf_model)
+
+```
+
+
+
+
+
+```{r}
+
+rf_pred <- predict(rf_model, newdata = val.data, type = 'prob')
+
+summary(rf_pred)
+
+```
+
+
+
+
+```{r}
+
+rf_prom <- as.factor(ifelse(rf_pred[,2] > 0.05, '1', '0'))
+
+confusionMatrix(rf_prom, act_prom, positive = '1')
+
+
+```
+
+
+
+
+
+```{r}
+
+# Balancing the classes by SMOTE
+require(smotefamily)
+
+set.seed(100)
+trn.smote <- SMOTE(trn.data[,-c(1,32)], trn.data$is_promoted)
+
+# Classes are well balanced as compared to orig. data.
+
+```
+
+
+```{r}
+trn.data <- trn.smote$data
+
+str(trn.data)
+
+```
+
+
+
+```{r}
+names(trn.data)[33] <- 'is_promoted'
+
+```
+
+
+
+```{r}
+table(trn.data$is_promoted)
+
+
+```
+
+
+
+
+```{r}
+
+sapply(trn.data, n_distinct)
+
+```
+
+
+
+```{r}
+
+trn.data[,c(1:18, 21:26, 28:29)] <- sapply(trn.data[,c(1:18, 21:26, 28:29)], round)
+
+```
+
+
+
+
+```{r}
+require(class)
+# KNN on balanced classes
+
+knn_pred <- knn(train = select(trn.data, -is_promoted), 
+                cl = trn.data$is_promoted, 
+                test = select(val.data, -c(employee_id, is_promoted)), 
+                k = 25)
+
+confusionMatrix(knn_pred, act_prom, positive = '1')
+
+
+```
+
+
+
+```{r}
+dt_model <- rpart(is_promoted ~ ., data = trn.data)
+
+prp(dt_model)
+
+```
+
+
+```{r}
+
+dt_pred <- predict(dt_model, newdata = val.data)
+
+dt_prom <- as.factor(ifelse(dt_pred[,2] > 0.7, "1", "0"))
+
+confusionMatrix(dt_prom, act_prom, positive = '1')
+
+
+```
+
+
+```{r}
+rm(dt_model, dt_pred, model_3, rf_pred, trn.smote, dt_prom, knn_prom, rf_prom)
+```
+```{r}
+
+
+model_log <- glm(as.factor(is_promoted) ~ ., data = trn.data , family = 'binomial')
+
+summary(model_log)
+```
+```{r}
+model_4 <- step(model_log)
+
+summary(model_4)
+```
+```{r}
+
+
+sort(vif(model_4))
+```
+
+```{r}
+
+model_5 <- glm(formula = as.factor(is_promoted) ~ departmentanalytics + 
+    departmentfinance + departmenthr + departmentlegal + departmentoperations + 
+    departmentprocurement + department_r_d + department_sales_marketing + 
+    education_bachelors + education_masters + genderf + recruitment_channelother + 
+    recruitment_channelreferred + no_of_trainings + age + previous_year_rating1 + 
+    previous_year_rating2 + previous_year_rating4 + previous_year_rating5 + 
+    length_of_service + KPIs_met_80 + awards_won + avg_training_score , family = "binomial", data = trn.data)
+
+
+summary(model_5)
+
+```
+
+```{r}
+
+
+sort(vif(model_5))
+```
+
+
+
+```{r}
+
+model_6 <- glm(formula = as.factor(is_promoted) ~ departmentanalytics + 
+    departmentfinance + departmenthr + departmentlegal + departmentoperations + 
+    departmentprocurement + department_r_d  + 
+    education_bachelors + education_masters + genderf + recruitment_channelother + 
+    recruitment_channelreferred + no_of_trainings + age + previous_year_rating1 + 
+    previous_year_rating2 + previous_year_rating4 + previous_year_rating5 + 
+    length_of_service + KPIs_met_80 + awards_won + avg_training_score, 
+    family = "binomial", data = trn.data)
+
+summary(model_6)
+
+
+```
+
+
+```{r}
+sort(vif(model_6))
+```
+
+```{r}
+
+round(prop.table(table(trn.data$is_promoted)) * 100, 2)
+
+
+```
+
+
+
+
+
+```{r}
+
+
+prob_prom <- predict(model_6, newdata = val.data, type = 'response')
+
+summary(prob_prom)
+
+pred_prom <- as.factor(ifelse(prob_prom > 0.48, 1, 0))
+
+act_prom <- as.factor(val.data$is_promoted)
+
+require(caret)
+confusionMatrix(pred_prom, act_prom, positive = '1')
+
+
+```
+
+
+```{r}
+
+
+rm(lrm_1,lrm_2,lrm_3,model_4,model_3,model_2,model_1,model_log,rf_model,model_5,model_6,knn_pred,pred_prom,prob_prom)
+```
+
+
+```{r}
+set.seed(999)
+rf_model <- randomForest(as.factor(is_promoted) ~ ., trn.data[,-1], ntree = 1000,
+                         do.trace = 50, importance = T)
+
+
+
+
+```
+
+
+```{r}
+
+# Building SVM model
+
+require(e1071)
+
+?e1071::svm
+
+trn.data$is_promoted <- as.factor(trn.data$is_promoted)
+
+# Linear
+svm_lnr <- svm(is_promoted ~ ., data = trn.data, kernel = "linear", scale = F)
+
+```
+
+
+
+
+```{r}
+
+pred_prom <- predict(svm_lnr, newdata = val.data)
+
+confusionMatrix(pred_prom, act_prom, positive = "1")
+
+```
+
+
